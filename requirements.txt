@@ -1,0 +1,16 @@
+chainlit
+python-dotenv
+langchain
+openai
+chromadb
+tiktoken
+langchain-openai
+langchain-chroma
+langchain-community
+langchain-core
+langchain-ollama
+docx2txt
+shutil
+mimetypes
+pypdf2
+pypdf
