@@ -10,7 +10,4 @@ langchain-community
 langchain-core
 langchain-ollama
 docx2txt
-shutil
-mimetypes
 pypdf2
-pypdf

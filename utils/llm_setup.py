@@ -5,8 +5,8 @@ from config import config
 
 def init_embeddings():
     return OllamaEmbeddings(
-        model="bge-m3",
-        base_url="http://localhost:11434"
+        model=config.EMBEDDING_MODEL,
+        base_url=config.EMBEDDING_MODEL_API_BASE
     )
 
 def init_vector_store(embeddings):

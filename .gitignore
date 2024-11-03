@@ -1,10 +1,6 @@
 venv
 .env
-chroma_db
-uploads
 __pycache__
 .chainlit
 .files
-sessions/
-python-json-logger
 data
