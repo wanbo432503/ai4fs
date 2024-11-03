@@ -1,15 +1,14 @@
-import os
 import chainlit as cl
+from chainlit.types import ThreadDict
 from dotenv import load_dotenv
-import shutil
-import mimetypes
 from utils.document_loader import load_document, process_uploaded_file
 from utils.llm_setup import init_embeddings, init_vector_store, init_llm
 from utils.qa_chain import create_qa_chain, create_chat_chain
 from config import config
-from utils.chat import send_welcome_message, reset_chat
-import uuid
 from utils.chat_history import ChatHistoryManager
+from typing import Optional
+import chainlit.data as cl_data
+from utils.data_layer import AI4FSDataLayer
 
 # 加载环境变量
 load_dotenv()
@@ -22,33 +21,27 @@ llm = init_llm()
 # 初始化聊天历史管理器
 chat_history = ChatHistoryManager(vector_store)
 
+# 设置自定义数据层
+cl_data._data_layer = AI4FSDataLayer()
+
+
 @cl.on_chat_start
 async def start():
-    # 生成新的会话ID
-    conversation_id = str(uuid.uuid4())
-    cl.user_session.set("conversation_id", conversation_id)
-    
-    # 发送欢迎消息
-    await send_welcome_message()
-    
-    # 加载历史消息
-    messages = chat_history.get_conversation_history(conversation_id)
-    for msg in messages:
-        await cl.Message(
-            content=msg["content"],
-            author=msg["role"]
-        ).send()
+    try:       
+        # 如果没有会话或会话已过期，创建新会话，采用cl.context.session.thread_id作为thread的key
+        await cl.Message(content="正在开启新的会话...").send()
+        await cl.ChatSettings(defaults={"model": config.CUSTOM_MODEL_NAME}).send()
+        
+    except Exception as e:
+        print(f"初始化会话时出错: {str(e)}")
 
-@cl.action_callback("new_chat")
-async def on_new_chat(action):
-    """处理新建聊天的回调"""
-    await reset_chat()
-    await start()
 
 @cl.on_message
 async def main(message: cl.Message):
-    conversation_id = cl.user_session.get("conversation_id")
-    
+    conversation_id = cl.context.session.thread_id
+    # 创建消息元素
+    msg = cl.Message(content="")
+    await msg.send()  # 先发送空消息
     # 确保向量存储已初始化
     if not vector_store:
         await cl.Message(content="数据库尚未初始化，系统启动不正常...").send()
@@ -63,10 +56,6 @@ async def main(message: cl.Message):
                 await cl.Message(content=msg).send()
                 if not success:
                     continue
-
-    # 创建消息元素
-    msg = cl.Message(content="")
-    await msg.send()  # 先发送空消息
     
     full_response = ""
     try:
@@ -90,7 +79,9 @@ async def main(message: cl.Message):
                 full_response += chunk
         else:  # 如果是普通对话，使用聊天链
             chain = create_chat_chain(llm)
+            print(f"test get message of conversation: {conversation_id}")
             chat_history_text = chat_history.get_recent_messages(conversation_id)
+            print(f"Chat history text: {chat_history_text}")
             async for chunk in chain.astream({
                 "question": message.content,
                 "chat_history": chat_history_text
@@ -116,4 +107,17 @@ async def main(message: cl.Message):
         await msg.update()
         print(f"Error: {error_msg}")  # 添加错误日志
 
-# 这里继续保留原来的 @cl.on_message 处理函数...
+
+@cl.on_chat_resume
+async def on_chat_resume(thread: ThreadDict):
+    print(f"resume {thread['id']}")
+
+
+@cl.password_auth_callback
+def auth_callback(username: str, password: str) -> Optional[cl.User]:
+    if (username, password) == ("admin", "admin"):
+        return cl.User(
+            identifier=username,
+            metadata={"role": "admin", "provider": "credentials"}
+        )
+    return None

@@ -5,3 +5,6 @@ uploads
 __pycache__
 .chainlit
 .files
+sessions/
+python-json-logger
+data

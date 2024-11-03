@@ -23,9 +23,12 @@ class Config:
     TEMPERATURE = float(os.getenv("TEMPERATURE", 0.7))
 
     # 文件上传路径
-    UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "./uploads")
+    UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER", "./data/uploads")
 
     # 向量存储路径
-    VECTOR_STORE_PATH = os.getenv("VECTOR_STORE_PATH", "./chroma_db")
+    VECTOR_STORE_PATH = os.getenv("VECTOR_STORE_PATH", "./data/chroma_db")
+    
+    # 用户会话文件
+    USER_SESSIONS_FILE = os.getenv("USER_SESSIONS_FILE", "./data/user_session.json")
 
 config = Config()

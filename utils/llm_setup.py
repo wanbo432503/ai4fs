@@ -2,8 +2,6 @@ from langchain_ollama import OllamaEmbeddings
 from langchain_chroma import Chroma
 from langchain_openai import ChatOpenAI
 from config import config
-import os
-import shutil
 
 def init_embeddings():
     return OllamaEmbeddings(
