@@ -39,61 +39,23 @@ async def start():
 @cl.on_message
 async def main(message: cl.Message):
     conversation_id = cl.context.session.thread_id
-    # 创建消息元素
-    msg = cl.Message(content="")
-    await msg.send()  # 先发送空消息
-    # 确保向量存储已初始化
-    if not vector_store:
-        await cl.Message(content="数据库尚未初始化，系统启动不正常...").send()
-        return
-
-        # 检查消息是否包含附件
-    if message.elements:  # 如果有上传文件，上传文档，并向量化存储起来
-        for element in message.elements:
-            if isinstance(element, cl.File):
-                print(f"Processing uploaded file: {element.name}")
-                success, msg = await process_uploaded_file(element, vector_store, config)
-                await cl.Message(content=msg).send()
-                if not success:
-                    continue
     
-    full_response = ""
     try:
+        # 检查向量存储是否初始化
+        if not vector_store:
+            await cl.Message(content="数据库尚未初始化，系统启动不正常...").send()
+            return
+            
         # 保存用户消息
         chat_history.save_message(
             conversation_id=conversation_id,
-            role="user",
+            role="user", 
             content=message.content
         )
         
-        if message.elements:  # 如果有上传文件，使用 QA 链
-            # 创建检索链
-            retriever = vector_store.as_retriever(
-                search_type="similarity",
-                search_kwargs={"k": 5}
-            )
-            chain = create_qa_chain(llm, retriever)
-            async for chunk in chain(message.content):
-                # print(f"Chunk: {chunk}")
-                await msg.stream_token(chunk)
-                full_response += chunk
-        else:  # 如果是普通对话，使用聊天链
-            chain = create_chat_chain(llm)
-            print(f"test get message of conversation: {conversation_id}")
-            chat_history_text = chat_history.get_recent_messages(conversation_id)
-            print(f"Chat history text: {chat_history_text}")
-            async for chunk in chain.astream({
-                "question": message.content,
-                "chat_history": chat_history_text
-            }):
-                # print(f"Chunk: {chunk}")
-                await msg.stream_token(chunk)
-                full_response += chunk
-            
-        # 更新最终消息
-        msg.content = full_response
-        await msg.update()
-        
+        # 根据是否有文件上传选择不同的处理流程
+        full_response = await handle_message(message, conversation_id)
+
         # 保存AI回复
         chat_history.save_message(
             conversation_id=conversation_id,
@@ -103,9 +65,72 @@ async def main(message: cl.Message):
             
     except Exception as e:
         error_msg = f"处理您的问题时出错：{str(e)}"
-        msg.content = error_msg
-        await msg.update()
-        print(f"Error: {error_msg}")  # 添加错误日志
+        cl.Message(content=error_msg).send()
+
+
+async def handle_message(message: cl.Message, conversation_id: str) -> str:
+    """处理用户消息,返回AI回复内容"""
+    if message.elements:
+        return await handle_file_message(message)
+    else:
+        return await handle_chat_message(message, conversation_id)
+        
+async def handle_file_message(message: cl.Message) -> str:
+    """处理包含文件的消息"""
+    # 处理文件上传
+    for element in message.elements:
+        if isinstance(element, cl.File):
+            print(f"Processing uploaded file: {element.name}")
+            success, msg = await process_uploaded_file(element, vector_store, config)
+            await cl.Message(content=msg).send()
+            if not success:
+                continue
+                
+    # 创建QA链处理问题
+    retriever = vector_store.as_retriever(
+        search_type="similarity",
+        search_kwargs={"k": 5}
+    )
+    chain = create_qa_chain(llm, retriever)
+    
+    # 创建消息对象用于流式输出
+    msg = cl.Message(content="")
+    await msg.send()
+    
+    # 获取回复
+    full_response = ""
+    async for chunk in chain(message.content):
+        await msg.stream_token(chunk)
+        full_response += chunk
+        
+    # 更新最终消息内容    
+    msg.content = full_response
+    await msg.update()
+    
+    return full_response
+
+async def handle_chat_message(message: cl.Message, conversation_id: str) -> str:
+    """处理普通对话消息"""
+    chain = create_chat_chain(llm)
+    chat_history_text = chat_history.get_recent_messages(conversation_id)
+    
+    # 创建消息对象用于流式输出
+    msg = cl.Message(content="")
+    await msg.send()
+    
+    full_response = ""
+    async for chunk in chain.astream({
+        "question": message.content,
+        "chat_history": chat_history_text
+    }):
+        await msg.stream_token(chunk)
+        full_response += chunk
+        
+    # 更新最终消息内容
+    msg.content = full_response 
+    await msg.update()
+    
+    return full_response
 
 
 @cl.on_chat_resume
