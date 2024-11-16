@@ -9,6 +9,8 @@ from utils.chat_history import ChatHistoryManager
 from typing import Optional
 import chainlit.data as cl_data
 from utils.data_layer import AI4FSDataLayer
+import json
+from openai import OpenAI
 
 # 加载环境变量
 load_dotenv()
@@ -56,6 +58,7 @@ async def main(message: cl.Message):
         )
         
         global fisrt_msg, title_generated
+        conv_summary_chain = None
         if fisrt_msg and not title_generated:
             message_history = chat_history.get_conversation_history(conversation_id)
             if len([msg for msg in message_history if msg["role"] == "user"]) == 3:
@@ -129,23 +132,20 @@ async def handle_chat_message(message: cl.Message, conversation_id: str) -> str:
     chain = create_chat_chain(llm)
     chat_history_text = chat_history.get_recent_messages(conversation_id)
     
-    # 创建消息对象用于流式输出
+    # 创建消息对象
     msg = cl.Message(content="")
     await msg.send()
     
-    full_response = ""
-    async for chunk in chain.astream({
+    response = await chain({
         "question": message.content,
         "chat_history": chat_history_text
-    }):
-        await msg.stream_token(chunk)
-        full_response += chunk
-        
-    # 更新最终消息内容
-    msg.content = full_response 
+    })
+    
+    # 更新消息内容
+    msg.content = response
     await msg.update()
     
-    return full_response
+    return response
 
 
 @cl.on_chat_resume
