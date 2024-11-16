@@ -3,7 +3,7 @@ from chainlit.types import ThreadDict
 from dotenv import load_dotenv
 from utils.document_loader import load_document, process_uploaded_file
 from utils.llm_setup import init_embeddings, init_vector_store, init_llm
-from utils.qa_chain import create_qa_chain, create_chat_chain
+from utils.qa_chain import create_qa_chain, create_chat_chain, create_conv_summary_chain
 from config import config
 from utils.chat_history import ChatHistoryManager
 from typing import Optional
@@ -24,6 +24,8 @@ chat_history = ChatHistoryManager(vector_store)
 # 设置自定义数据层
 cl_data._data_layer = AI4FSDataLayer()
 
+fisrt_msg = True
+title_generated = False
 
 @cl.on_chat_start
 async def start():
@@ -53,6 +55,13 @@ async def main(message: cl.Message):
             content=message.content
         )
         
+        global fisrt_msg, title_generated
+        if fisrt_msg and not title_generated:
+            message_history = chat_history.get_conversation_history(conversation_id)
+            if len([msg for msg in message_history if msg["role"] == "user"]) == 3:
+                title_generated = True
+                conv_summary_chain = create_conv_summary_chain(llm)
+        
         # 根据是否有文件上传选择不同的处理流程
         full_response = await handle_message(message, conversation_id)
 
@@ -62,10 +71,16 @@ async def main(message: cl.Message):
             role="assistant",
             content=full_response
         )
+        
+        if title_generated:
+            summary = chat_history.generate_conv_summary(conversation_id)
+            title = conv_summary_chain.invoke({"chat_history": summary})
+            await cl_data._data_layer.update_thread(message.thread_id, name=title)
+            fisrt_msg = False
             
     except Exception as e:
         error_msg = f"处理您的问题时出错：{str(e)}"
-        cl.Message(content=error_msg).send()
+        await cl.Message(content=error_msg).send()
 
 
 async def handle_message(message: cl.Message, conversation_id: str) -> str:

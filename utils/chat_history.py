@@ -74,3 +74,15 @@ class ChatHistoryManager:
         except Exception as e:
             print(f"Error getting conversation history: {e}")
             return ""
+        
+    def generate_conv_summary(self, conversation_id: str) -> str:
+        """生成生成标题所需的对话内容"""
+        conv_messages = self.get_conversation_history(conversation_id)
+        conv = ""
+        for message in conv_messages:
+            if message["role"] == "user":
+                conv += f"User: {message['content']}\n"
+            elif message["role"] == "assistant":
+                conv += f"Assistant: {message['content']}\n"
+
+        return conv

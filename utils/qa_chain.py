@@ -53,3 +53,21 @@ def create_chat_chain(llm):
     chain = prompt | llm | parser
     
     return chain
+
+def create_conv_summary_chain(llm):
+    """创建生成对话摘要的链"""
+    template = """你扮演一个对话总结器，为以下用户与AI助手之间的对话创建简洁标题。
+    根据对话内容，生成一个标题，要求不超过6个字，且要能精准捕捉对话的核心主题。
+    
+    Conversation：
+    {chat_history}
+    
+    输出标题：
+    """
+    
+    prompt = ChatPromptTemplate.from_template(template=template)
+    parser = StrOutputParser()
+    chain = prompt | llm | parser
+    
+    return chain
+    
