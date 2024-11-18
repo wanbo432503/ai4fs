@@ -34,5 +34,9 @@ class Config:
     
     # 用户会话文件
     USER_SESSIONS_FILE = os.getenv("USER_SESSIONS_FILE", "./data/user_session.json")
+    
+    # Tavily API密钥
+    TAVILY_API_KEY = os.getenv("TAVILY_API_KEY")
+
 
 config = Config()

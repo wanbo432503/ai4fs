@@ -1,10 +1,11 @@
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_community.tools import DuckDuckGoSearchRun, DuckDuckGoSearchResults
+from langchain_community.tools import DuckDuckGoSearchRun, DuckDuckGoSearchResults, TavilySearchResults
 from langchain_core.utils.function_calling import convert_to_openai_function
 import json
 from config import config
 from openai import AsyncOpenAI
+import asyncio
 
 def generate_tool_for_moonshot(tools):
     tool_list = [convert_to_openai_function(t) for t in tools]
@@ -64,7 +65,8 @@ def create_chat_chain(llm):
     当前问题：{question}
     """
     
-    tools = [DuckDuckGoSearchResults(max_results=5)]
+    tools = [DuckDuckGoSearchResults(max_results=2),
+             TavilySearchResults(api_key=config.TAVILY_API_KEY)]
     generated_tools = generate_tool_for_moonshot(tools)
     
     # 使用 AsyncOpenAI 替代 OpenAI
@@ -93,14 +95,14 @@ def create_chat_chain(llm):
             
             if response.choices[0].message.tool_calls:
                 tool_calls = response.choices[0].message.tool_calls
-                
+                print(f"tool_calls: {tool_calls}")
                 for tool_call in tool_calls:
                     function_name = tool_call.function.name
                     function_args = json.loads(tool_call.function.arguments)
                     
                     # 执行工具调用
                     tool = next((t for t in tools if t.name == function_name), None)
-                    if tool:
+                    if tool is not None:
                         tool_response = tool.invoke(function_args)
                         
                         # 将工具响应添加到消息历史
@@ -121,15 +123,18 @@ def create_chat_chain(llm):
                             messages=messages,
                             temperature=0.7
                         )
-                        return final_response.choices[0].message.content
+
+                        async for chunk in simulate_stream(final_response.choices[0].message.content):
+                            yield chunk
                     
             else:
                 # 如果没有工具调用，直接返回响应内容
-                return response.choices[0].message.content
+                async for chunk in simulate_stream(response.choices[0].message.content):
+                    yield chunk 
                     
         except Exception as e:
             print(f"Error in chat chain: {str(e)}")
-            return f"处理您的问题时出错：{str(e)}"
+            yield f"处理您的问题时出错：{str(e)}"
     
     return chat_chain_with_tools
 
@@ -149,4 +154,9 @@ def create_conv_summary_chain(llm):
     chain = prompt | llm | parser
     
     return chain
+    
+async def simulate_stream(text: str):
+    for char in text:
+        yield char
+        await asyncio.sleep(0.02)  # 每个字符间隔20ms
     

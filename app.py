@@ -136,16 +136,22 @@ async def handle_chat_message(message: cl.Message, conversation_id: str) -> str:
     msg = cl.Message(content="")
     await msg.send()
     
-    response = await chain({
+    # 初始化响应变量
+    full_response = ""
+    
+    # 获取回复并流式输出
+    async for chunk in chain({
         "question": message.content,
         "chat_history": chat_history_text
-    })
+    }):
+        await msg.stream_token(chunk)
+        full_response += chunk
     
     # 更新消息内容
-    msg.content = response
+    msg.content = full_response
     await msg.update()
     
-    return response
+    return full_response
 
 
 @cl.on_chat_resume

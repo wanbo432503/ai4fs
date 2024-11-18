@@ -11,3 +11,5 @@ langchain-core
 langchain-ollama
 docx2txt
 pypdf2
+tavily
+duckduckgo-search
