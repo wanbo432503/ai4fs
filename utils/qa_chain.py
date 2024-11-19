@@ -6,6 +6,7 @@ import json
 from config import config
 from openai import AsyncOpenAI
 import asyncio
+from datetime import datetime
 
 def generate_tool_for_moonshot(tools):
     tool_list = [convert_to_openai_function(t) for t in tools]
@@ -57,7 +58,7 @@ def create_qa_chain(llm, retriever):
 
 def create_chat_chain(llm):
     """创建支持工具调用的聊天链"""
-    template = """请以专业、友好的语气回答用户的问题。如果需要搜索相关信息，请使用搜索工具。
+    template = """请以专业、友好的语气回答用户的问题。如果需要搜索相关信息，请使用搜索工具。当前时间为：{current_time}。
     
     最近的对话历史：
     {chat_history}
@@ -65,8 +66,22 @@ def create_chat_chain(llm):
     当前问题：{question}
     """
     
-    tools = [DuckDuckGoSearchResults(max_results=2),
-             TavilySearchResults(api_key=config.TAVILY_API_KEY)]
+    # 初始化工具列表并确保工具名称匹配
+    tools = []
+    tools.append(DuckDuckGoSearchResults(
+        name="duckduckgo_results_json",
+        max_results=2
+    ))
+    
+    # 如果配置了Tavily API密钥,则添加Tavily搜索工具
+    if config.TAVILY_API_KEY:
+        tools.append(TavilySearchResults(
+            name="tavily_search_results_json",
+            api_key=config.TAVILY_API_KEY
+        ))
+    
+    # 创建工具名称到工具实例的映射
+    tool_map = {tool.name: tool for tool in tools}
     generated_tools = generate_tool_for_moonshot(tools)
     
     # 使用异步 OpenAI 客户端
@@ -77,15 +92,17 @@ def create_chat_chain(llm):
     
     async def chat_chain_with_tools(inputs: dict):
         try:
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            
             messages = [{
-                "role": "user",
+                "role": "user", 
                 "content": template.format(
+                    current_time=current_time,
                     chat_history=inputs.get("chat_history", ""),
                     question=inputs["question"]
                 )
             }]
             
-            # 收集完整的工具调用信息
             complete_tool_calls = {}
             
             response = await client.chat.completions.create(
@@ -115,45 +132,57 @@ def create_chat_chain(llm):
                         if complete_tool_calls[tool_call.index]["name"] and complete_tool_calls[tool_call.index]["arguments"]:
                             try:
                                 tool_call_info = complete_tool_calls[tool_call.index]
+                                
+                                # 确保参数字符串是完整的JSON
+                                if not tool_call_info["arguments"].strip().endswith("}"):
+                                    continue
+                                    
                                 function_args = json.loads(tool_call_info["arguments"])
                                 
-                                # 执行工具调用
-                                tool = next((t for t in tools if t.name == tool_call_info["name"]), None)
-                                if tool is not None:
+                                # 使用工具映射获取工具实例
+                                tool = tool_map.get(tool_call_info["name"])
+                                if tool is None:
+                                    print(f"Tool not found: {tool_call_info['name']}")
+                                    continue
+                                    
+                                try:
                                     tool_response = tool.invoke(function_args)
-                                    
-                                    # 将工具响应添加到消息历史
-                                    messages.append({
-                                        "role": "assistant",
-                                        "content": None,
-                                        "tool_calls": [{
-                                            "id": tool_call_info["id"],
-                                            "function": {
-                                                "name": tool_call_info["name"],
-                                                "arguments": tool_call_info["arguments"]
-                                            },
-                                            "type": "function"
-                                        }]
-                                    })
-                                    messages.append({
-                                        "role": "tool",
-                                        "content": str(tool_response),
-                                        "tool_call_id": tool_call_info["id"]
-                                    })
-                                    
-                                    # 获取最终响应
-                                    final_response = await client.chat.completions.create(
-                                        model="moonshot-v1-32k",
-                                        messages=messages,
-                                        temperature=0.7,
-                                        stream=True,
-                                    )
+                                except Exception as e:
+                                    print(f"Tool invocation error: {str(e)}")
+                                    continue
+                                
+                                # 将工具响应添加到消息历史
+                                messages.append({
+                                    "role": "assistant",
+                                    "content": None,
+                                    "tool_calls": [{
+                                        "id": tool_call_info["id"],
+                                        "function": {
+                                            "name": tool_call_info["name"],
+                                            "arguments": tool_call_info["arguments"]
+                                        },
+                                        "type": "function"
+                                    }]
+                                })
+                                messages.append({
+                                    "role": "tool",
+                                    "content": str(tool_response),
+                                    "tool_call_id": tool_call_info["id"]
+                                })
+                                
+                                # 获取最终响应
+                                final_response = await client.chat.completions.create(
+                                    model="moonshot-v1-32k",
+                                    messages=messages,
+                                    temperature=0.7,
+                                    stream=True,
+                                )
 
-                                    async for final_chunk in final_response:
-                                        if final_chunk.choices[0].delta.content:
-                                            yield final_chunk.choices[0].delta.content
+                                async for final_chunk in final_response:
+                                    if final_chunk.choices[0].delta.content:
+                                        yield final_chunk.choices[0].delta.content
                             except json.JSONDecodeError as e:
-                                print(f"JSON parsing error: {str(e)}, tool_call_info: {complete_tool_calls[tool_call.index]}")
+                                print(f"JSON parsing error: {str(e)}, tool_call_info: {tool_call_info}")
                                 continue
                 else:
                     if chunk.choices[0].delta.content:
