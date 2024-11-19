@@ -16,8 +16,11 @@ class Config:
     CUSTOM_MODEL_NAME = os.getenv("CUSTOM_MODEL_NAME")
     
     # 嵌入模型配置
-    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "bge-m3")
+    EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "nomic-embed-text")
     EMBEDDING_MODEL_API_BASE = os.getenv("EMBEDDING_MODEL_API_BASE", "http://localhost:11434")
+    EMBEDDING_MODEL_API_KEY = os.getenv("EMBEDDING_MODEL_API_KEY", "EMPTY")
+    
+    USE_CUSTOM_EMBEDDINGS = os.getenv("USE_CUSTOM_EMBEDDINGS", "false").lower() == "true"
 
     # 模型选择
     USE_CUSTOM_MODEL = os.getenv("USE_CUSTOM_MODEL", "false").lower() == "true"

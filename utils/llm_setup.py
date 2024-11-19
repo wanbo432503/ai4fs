@@ -1,13 +1,21 @@
-from langchain_ollama import OllamaEmbeddings
+from langchain_community.embeddings import OllamaEmbeddings
 from langchain_chroma import Chroma
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from config import config
 
 def init_embeddings():
-    return OllamaEmbeddings(
-        model=config.EMBEDDING_MODEL,
-        base_url=config.EMBEDDING_MODEL_API_BASE
-    )
+    """获取嵌入模型实例"""
+    if config.USE_CUSTOM_EMBEDDINGS:
+        return OllamaEmbeddings(
+            base_url=config.EMBEDDING_MODEL_API_BASE,
+            model=config.EMBEDDING_MODEL
+        )
+    else:
+        return OpenAIEmbeddings(
+            model=config.EMBEDDING_MODEL,
+            base_url=config.EMBEDDING_MODEL_API_BASE,
+            api_key=config.EMBEDDING_MODEL_API_KEY
+        )
 
 def init_vector_store(embeddings):
     persist_dir = config.VECTOR_STORE_PATH
