@@ -8,16 +8,16 @@ from openai import AsyncOpenAI
 import asyncio
 from datetime import datetime
 
-def generate_tool_for_moonshot(tools):
+def generate_func_tools(tools):
     tool_list = [convert_to_openai_function(t) for t in tools]
-    moonshot_tools = []
+    func_tools = []
     for tool in tool_list:
-        # moonshot 需要指定 function 类型
-        moonshot_tools.append({
+        # OpenAI 需要指定 function 类型，参考https://platform.openai.com/docs/guides/function-calling
+        func_tools.append({
             "type": "function",
             "function": tool
         })
-    return moonshot_tools
+    return func_tools
 
 def create_qa_chain(llm, retriever):
     template = """基于以下已知信息，简洁和专业地回答用户的问题。
@@ -66,7 +66,7 @@ def create_chat_chain(llm):
     当前问题：{question}
     """
     
-    # 初始化工具列表并确保工具名称匹配
+    # 初始化搜索工具列表并确保工具名称匹配
     tools = []
     tools.append(DuckDuckGoSearchResults(
         name="duckduckgo_results_json",
@@ -82,7 +82,7 @@ def create_chat_chain(llm):
     
     # 创建工具名称到工具实例的映射
     tool_map = {tool.name: tool for tool in tools}
-    generated_tools = generate_tool_for_moonshot(tools)
+    generated_tools = generate_func_tools(tools)
     
     # 使用异步 OpenAI 客户端
     client = AsyncOpenAI(
@@ -93,7 +93,6 @@ def create_chat_chain(llm):
     async def chat_chain_with_tools(inputs: dict):
         try:
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            
             messages = [{
                 "role": "user", 
                 "content": template.format(
@@ -104,6 +103,7 @@ def create_chat_chain(llm):
             }]
             
             complete_tool_calls = {}
+            failed_tools = set()  # 记录失败的工具
             
             response = await client.chat.completions.create(
                 model="moonshot-v1-32k",
@@ -124,51 +124,93 @@ def create_chat_chain(llm):
                                 "arguments": ""
                             }
                         
-                        # 累积参数字符串
                         if hasattr(tool_call.function, 'arguments'):
                             complete_tool_calls[tool_call.index]["arguments"] += tool_call.function.arguments
                             
-                        # 如果工具调用信息完整，执行工具调用
                         if complete_tool_calls[tool_call.index]["name"] and complete_tool_calls[tool_call.index]["arguments"]:
                             try:
                                 tool_call_info = complete_tool_calls[tool_call.index]
                                 
-                                # 确保参数字符串是完整的JSON
                                 if not tool_call_info["arguments"].strip().endswith("}"):
                                     continue
                                     
                                 function_args = json.loads(tool_call_info["arguments"])
+                                tool_name = tool_call_info["name"]
                                 
-                                # 使用工具映射获取工具实例
-                                tool = tool_map.get(tool_call_info["name"])
+                                # 检查工具是否已经失败过
+                                if tool_name in failed_tools:
+                                    continue
+                                    
+                                tool = tool_map.get(tool_name)
                                 if tool is None:
-                                    print(f"Tool not found: {tool_call_info['name']}")
+                                    print(f"Tool not found: {tool_name}")
                                     continue
                                     
                                 try:
                                     tool_response = tool.invoke(function_args)
+                                    
+                                    # 工具调用成功，添加到消息历史
+                                    messages.append({
+                                        "role": "assistant",
+                                        "content": None,
+                                        "tool_calls": [{
+                                            "id": tool_call_info["id"],
+                                            "function": {
+                                                "name": tool_name,
+                                                "arguments": tool_call_info["arguments"]
+                                            },
+                                            "type": "function"
+                                        }]
+                                    })
+                                    messages.append({
+                                        "role": "tool",
+                                        "content": str(tool_response),
+                                        "tool_call_id": tool_call_info["id"]
+                                    })
+                                    
                                 except Exception as e:
                                     print(f"Tool invocation error: {str(e)}")
-                                    continue
-                                
-                                # 将工具响应添加到消息历史
-                                messages.append({
-                                    "role": "assistant",
-                                    "content": None,
-                                    "tool_calls": [{
-                                        "id": tool_call_info["id"],
-                                        "function": {
-                                            "name": tool_call_info["name"],
-                                            "arguments": tool_call_info["arguments"]
-                                        },
-                                        "type": "function"
-                                    }]
-                                })
-                                messages.append({
-                                    "role": "tool",
-                                    "content": str(tool_response),
-                                    "tool_call_id": tool_call_info["id"]
-                                })
+                                    failed_tools.add(tool_name)
+                                    
+                                    # 如果是速率限制错误，尝试使用其他工具
+                                    if "rate" in str(e).lower():
+                                        # 尝试使用备选工具
+                                        alternate_tool_name = next(
+                                            (name for name in tool_map.keys() 
+                                             if name != tool_name and name not in failed_tools), 
+                                            None
+                                        )
+                                        
+                                        if alternate_tool_name:
+                                            try:
+                                                alternate_tool = tool_map[alternate_tool_name]
+                                                tool_response = alternate_tool.invoke(function_args)
+                                                
+                                                messages.append({
+                                                    "role": "assistant",
+                                                    "content": None,
+                                                    "tool_calls": [{
+                                                        "id": tool_call_info["id"],
+                                                        "function": {
+                                                            "name": alternate_tool_name,
+                                                            "arguments": tool_call_info["arguments"]
+                                                        },
+                                                        "type": "function"
+                                                    }]
+                                                })
+                                                messages.append({
+                                                    "role": "tool",
+                                                    "content": str(tool_response),
+                                                    "tool_call_id": tool_call_info["id"]
+                                                })
+                                            except Exception as e2:
+                                                print(f"Alternate tool failed: {str(e2)}")
+                                                failed_tools.add(alternate_tool_name)
+                                                yield "抱歉，搜索服务暂时不可用，请稍后再试。"
+                                                continue
+                                        else:
+                                            yield "抱歉，所有搜索服务都暂时不可用，请稍后再试。"
+                                            continue
                                 
                                 # 获取最终响应
                                 final_response = await client.chat.completions.create(
@@ -181,6 +223,7 @@ def create_chat_chain(llm):
                                 async for final_chunk in final_response:
                                     if final_chunk.choices[0].delta.content:
                                         yield final_chunk.choices[0].delta.content
+                                    
                             except json.JSONDecodeError as e:
                                 print(f"JSON parsing error: {str(e)}, tool_call_info: {tool_call_info}")
                                 continue
