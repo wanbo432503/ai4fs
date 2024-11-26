@@ -1,12 +1,14 @@
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_community.tools import DuckDuckGoSearchRun, DuckDuckGoSearchResults, TavilySearchResults
+from langchain_community.tools import DuckDuckGoSearchResults, TavilySearchResults
+from langchain_community.utilities import OpenWeatherMapAPIWrapper
 from langchain_core.utils.function_calling import convert_to_openai_function
 import json
 from config import config
 from openai import AsyncOpenAI
 import asyncio
 from datetime import datetime
+from langchain.tools import Tool
 
 def generate_func_tools(tools):
     tool_list = [convert_to_openai_function(t) for t in tools]
@@ -84,11 +86,18 @@ def create_chat_chain(llm):
     tool_map = {tool.name: tool for tool in tools}
     generated_tools = generate_func_tools(tools)
     
-    # 使用异步 OpenAI 客户端
-    client = AsyncOpenAI(
-        api_key=config.CUSTOM_MODEL_API_KEY,
-        base_url=config.CUSTOM_MODEL_API_BASE,
-    )
+    if config.USE_CUSTOM_MODEL:
+        # 使用异步 OpenAI 客户端
+        client = AsyncOpenAI(
+            api_key=config.CUSTOM_MODEL_API_KEY,
+            base_url=config.CUSTOM_MODEL_API_BASE,
+        )
+        model_name = config.CUSTOM_MODEL_NAME
+    else:
+        client = AsyncOpenAI(
+            api_key=config.OPENAI_API_KEY,
+        )
+        model_name = config.OPENAI_MODEL_NAME
     
     async def chat_chain_with_tools(inputs: dict):
         try:
@@ -106,7 +115,7 @@ def create_chat_chain(llm):
             failed_tools = set()  # 记录失败的工具
             
             response = await client.chat.completions.create(
-                model="moonshot-v1-32k",
+                model=model_name,
                 messages=messages,
                 tools=generated_tools,
                 temperature=0.7,
@@ -147,6 +156,7 @@ def create_chat_chain(llm):
                                     continue
                                     
                                 try:
+                                    print(f"The tool is {tool}")
                                     tool_response = tool.invoke(function_args)
                                     
                                     # 工具调用成功，添加到消息历史
@@ -172,7 +182,7 @@ def create_chat_chain(llm):
                                     print(f"Tool invocation error: {str(e)}")
                                     failed_tools.add(tool_name)
                                     
-                                    # 如果是速率限制错误，尝试使用其他工具
+                                    # 如果是���率限制错误，尝试使用其他工具
                                     if "rate" in str(e).lower():
                                         # 尝试使用备选工具
                                         alternate_tool_name = next(
@@ -209,12 +219,12 @@ def create_chat_chain(llm):
                                                 yield "抱歉，搜索服务暂时不可用，请稍后再试。"
                                                 continue
                                         else:
-                                            yield "抱歉，所有搜索服务都暂时不可用，请稍后再试。"
+                                            yield "抱�����所有搜索服务都暂时不可用，请稍后再试。"
                                             continue
                                 
                                 # 获取最终响应
                                 final_response = await client.chat.completions.create(
-                                    model="moonshot-v1-32k",
+                                    model=model_name,
                                     messages=messages,
                                     temperature=0.7,
                                     stream=True,
