@@ -8,7 +8,6 @@ from config import config
 from openai import AsyncOpenAI
 import asyncio
 from datetime import datetime
-from langchain.tools import Tool
 
 def generate_func_tools(tools):
     tool_list = [convert_to_openai_function(t) for t in tools]
@@ -21,7 +20,7 @@ def generate_func_tools(tools):
         })
     return func_tools
 
-def create_qa_chain(llm, retriever):
+def create_qa_chain(llm):
     template = """基于以下已知信息，简洁和专业地回答用户的问题。
     如果无法从中得到答案，请说 "抱歉，我无法从文档中找到相关信息。"
     
@@ -40,16 +39,7 @@ def create_qa_chain(llm, retriever):
     parser = StrOutputParser()
     chain = prompt | llm | parser
     
-    async def qa_chain(question: str):
-        # 1. 检索相关文档 - 只检索文档类型的内容
-        docs = retriever.invoke(
-            question,
-            where={"type": "document"}  # 添加类型过滤
-        )
-        print(f"Docs: {docs}")
-        context = "\n\n".join(doc.page_content for doc in docs)
-        
-        # 2. 使用 chain.astream 进行流式输出
+    async def qa_chain(question: str, context: str):
         async for chunk in chain.astream({
             "context": context,
             "question": question
@@ -64,6 +54,9 @@ def create_chat_chain(llm):
     
     最近的对话历史：
     {chat_history}
+    
+    上传的相关文件内容：
+    {knowledge_text}
     
     当前问题：{question}
     """
@@ -107,6 +100,7 @@ def create_chat_chain(llm):
                 "content": template.format(
                     current_time=current_time,
                     chat_history=inputs.get("chat_history", ""),
+                    knowledge_text=inputs.get("knowledge_text", ""),
                     question=inputs["question"]
                 )
             }]
@@ -182,7 +176,7 @@ def create_chat_chain(llm):
                                     print(f"Tool invocation error: {str(e)}")
                                     failed_tools.add(tool_name)
                                     
-                                    # 如果是���率限制错误，尝试使用其他工具
+                                    # 如果是速率限制错误，尝试使用其他工具
                                     if "rate" in str(e).lower():
                                         # 尝试使用备选工具
                                         alternate_tool_name = next(
@@ -219,7 +213,7 @@ def create_chat_chain(llm):
                                                 yield "抱歉，搜索服务暂时不可用，请稍后再试。"
                                                 continue
                                         else:
-                                            yield "抱�����所有搜索服务都暂时不可用，请稍后再试。"
+                                            yield "抱歉，所有搜索服务都暂时不可用，请稍后再试。"
                                             continue
                                 
                                 # 获取最终响应

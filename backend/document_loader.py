@@ -33,7 +33,7 @@ def load_document(file_path: str):
     
     return loader.load()
 
-async def process_uploaded_file(element, vector_store, config):
+async def process_uploaded_file(element, vector_store, config, conversation_id):
     """
     处理上传的文件并添加到向量存储中。
 
@@ -75,20 +75,23 @@ async def process_uploaded_file(element, vector_store, config):
             text_splitter = CharacterTextSplitter(chunk_size=1200, chunk_overlap=100)
             texts = text_splitter.split_documents(documents)
             
+            result_text = ""
             # 为每个文档片段添加元数据
             for text in texts:
+                result_text += "\n" + text.page_content
                 text.metadata.update({
                     "type": "document",
                     "file_name": file_name,
                     "mime_type": mime_type,
-                    "timestamp": datetime.now().isoformat()
+                    "timestamp": datetime.now().isoformat(),
+                    "conversation_id": conversation_id
                 })
             
             vector_store.add_documents(texts)
             
-            return True, f"✅ 文件 {file_name} 已成功处理并添加到知识库"
+            return True, f"✅ 文件 {file_name} 已成功处理并添加到知识库", result_text
         else:
-            return False, f"❌ 不支持的文件类型：{mime_type}。请上传 PDF 或 Word 文档。"
+            return False, f"❌ 不支持的文件类型：{mime_type}。请上传 PDF 或 Word 文档。", ""
             
     except Exception as e:
         return False, f"处理文件时出错：{str(e)}"
