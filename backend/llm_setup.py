@@ -1,23 +1,33 @@
-from langchain_community.embeddings import OllamaEmbeddings
-from langchain_chroma import Chroma
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_ollama import OllamaEmbeddings
+from langchain_chroma import Chroma
 from config import config
 
 def init_embeddings():
     """获取嵌入模型实例"""
     if config.USE_CUSTOM_EMBEDDINGS:
-        return OllamaEmbeddings(
-            base_url=config.EMBEDDING_MODEL_API_BASE,
-            model=config.EMBEDDING_MODEL
-        )
+        try:
+            return OllamaEmbeddings(
+                base_url=config.EMBEDDING_MODEL_API_BASE,
+                model=config.EMBEDDING_MODEL
+            )
+        except Exception as e:
+            print(f"Failed to initialize Ollama embeddings: {str(e)}")
+            # 如果 Ollama 初始化失败，回退到 OpenAI
+            return init_openai_embeddings()
     else:
-        return OpenAIEmbeddings(
-            model=config.EMBEDDING_MODEL,
-            base_url=config.EMBEDDING_MODEL_API_BASE,
-            api_key=config.EMBEDDING_MODEL_API_KEY
-        )
+        return init_openai_embeddings()
+
+def init_openai_embeddings():
+    """初始化 OpenAI 嵌入模型"""
+    return OpenAIEmbeddings(
+        model=config.EMBEDDING_MODEL,
+        openai_api_base=config.EMBEDDING_MODEL_API_BASE,
+        openai_api_key=config.EMBEDDING_MODEL_API_KEY
+    )
 
 def init_vector_store(embeddings):
+    """初始化向量存储"""
     persist_dir = config.VECTOR_STORE_PATH
     
     return Chroma(
@@ -28,6 +38,7 @@ def init_vector_store(embeddings):
     )
 
 def init_llm():
+    """初始化语言模型"""
     if config.USE_CUSTOM_MODEL:
         return ChatOpenAI(
             model_name=config.CUSTOM_MODEL_NAME,

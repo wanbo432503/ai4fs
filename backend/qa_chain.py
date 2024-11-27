@@ -265,18 +265,16 @@ def create_conv_summary_chain(llm):
     
     输出标题：
     """
-    
-    prompt = ChatPromptTemplate.from_template(template=template)
-    parser = StrOutputParser()
-    chain = prompt | llm | parser
-    
+    try:
+        prompt = ChatPromptTemplate.from_template(template=template)
+        parser = StrOutputParser()
+        chain = prompt | llm | parser
+    except Exception as e:
+        print(f"Error in create_conv_summary_chain: {str(e)}")
+
     return chain
-    
-async def simulate_stream(text: str):
-    for char in text:
-        yield char
-        await asyncio.sleep(0.02)  # 每个字符间隔20ms
-    
+
+
 def create_basic_chat_chain(llm):
     """创建基础对话链（不包含工具调用）"""
     template = """请以专业、友好的语气回答用户的问题。当前时间为：{current_time}。

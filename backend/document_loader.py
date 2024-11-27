@@ -1,10 +1,18 @@
-from langchain.document_loaders import PyPDFLoader, Docx2txtLoader, CSVLoader, TextLoader, UnstructuredFileLoader
-from langchain.text_splitter import CharacterTextSplitter
+from langchain_community.document_loaders import (
+    PyPDFLoader, 
+    Docx2txtLoader, 
+    CSVLoader, 
+    TextLoader, 
+    UnstructuredFileLoader
+)
+from langchain_text_splitters import CharacterTextSplitter
 import os
 import mimetypes
 import shutil
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor
+
+
 executor = ThreadPoolExecutor(max_workers=5) 
 
 

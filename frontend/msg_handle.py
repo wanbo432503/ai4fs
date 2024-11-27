@@ -46,7 +46,7 @@ async def handle_file_message(message: cl.Message, conversation_id: str) -> str:
     
     # 获取回复
     full_response = ""
-    if len(result_text) > 32768:
+    if len(result_text) > 28672:
         result_text = result_text[:28672]
 
     async for chunk in chain(message.content, result_text):
