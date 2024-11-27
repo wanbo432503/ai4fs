@@ -4,6 +4,9 @@ import os
 import mimetypes
 import shutil
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
+executor = ThreadPoolExecutor(max_workers=5) 
+
 
 def load_document(file_path: str):
     """根据文件类型加载文档"""
@@ -41,9 +44,10 @@ async def process_uploaded_file(element, vector_store, config, conversation_id):
         element (cl.File): Chainlit文件对象
         vector_store: 向量存储对象
         config: 配置对象
+        conversation_id: 会话ID
 
     返回:
-        tuple: (bool, str) - (是否成功, 消息)
+        tuple: (bool, str, str) - (是否成功, 消息, 文档内容)
     """
     try:
         # 确保上传目录存在
@@ -72,14 +76,10 @@ async def process_uploaded_file(element, vector_store, config, conversation_id):
             
             # 处理文档
             documents = load_document(save_path)  # 使用保存后的文件路径
-            text_splitter = CharacterTextSplitter(chunk_size=1200, chunk_overlap=100)
-            texts = text_splitter.split_documents(documents)
-            
             result_text = ""
-            # 为每个文档片段添加元数据
-            for text in texts:
-                result_text += "\n" + text.page_content
-                text.metadata.update({
+            for doc in documents:
+                result_text += doc.page_content
+                doc.metadata.update({   
                     "type": "document",
                     "file_name": file_name,
                     "mime_type": mime_type,
@@ -87,11 +87,19 @@ async def process_uploaded_file(element, vector_store, config, conversation_id):
                     "conversation_id": conversation_id
                 })
             
-            vector_store.add_documents(texts)
+            # 提交到线程池执行
+            future = executor.submit(add_documents_to_vector_store, documents, vector_store)
             
             return True, f"✅ 文件 {file_name} 已成功处理并添加到知识库", result_text
         else:
             return False, f"❌ 不支持的文件类型：{mime_type}。请上传 PDF 或 Word 文档。", ""
             
     except Exception as e:
-        return False, f"处理文件时出错：{str(e)}"
+        return False, f"处理文件时出错：{str(e)}", ""
+    
+def add_documents_to_vector_store(documents, vector_store):
+    """将文档添加到向量存储中"""
+    text_splitter = CharacterTextSplitter(chunk_size=1200, chunk_overlap=100)
+    texts = text_splitter.split_documents(documents)
+    vector_store.add_documents(texts)
+    print("VectorDB: File index complete...")

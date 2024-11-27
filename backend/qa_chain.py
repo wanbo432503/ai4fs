@@ -63,21 +63,33 @@ def create_chat_chain(llm):
     
     # 初始化搜索工具列表并确保工具名称匹配
     tools = []
-    tools.append(DuckDuckGoSearchResults(
-        name="duckduckgo_results_json",
-        max_results=2
-    ))
-    
-    # 如果配置了Tavily API密钥,则添加Tavily搜索工具
-    if config.TAVILY_API_KEY:
-        tools.append(TavilySearchResults(
-            name="tavily_search_results_json",
-            api_key=config.TAVILY_API_KEY
+    try:
+        tools.append(DuckDuckGoSearchResults(
+            name="duckduckgo_results_json",
+            max_results=2
         ))
-    
-    # 创建工具名称到工具实例的映射
-    tool_map = {tool.name: tool for tool in tools}
-    generated_tools = generate_func_tools(tools)
+        
+        if config.TAVILY_API_KEY:
+            tools.append(TavilySearchResults(
+                name="tavily_search_results_json",
+                api_key=config.TAVILY_API_KEY
+            ))
+            
+        # 添加工具验证
+        if not tools:
+            raise ValueError("没有可用的搜索工具")
+            
+        # 创建工具映射前先验证工具是否正确初始化
+        tool_map = {tool.name: tool for tool in tools if tool and hasattr(tool, 'invoke')}
+        if not tool_map:
+            raise ValueError("工具映射创建失败")
+            
+        generated_tools = generate_func_tools(tools)
+        
+    except Exception as e:
+        print(f"工具初始化错误: {str(e)}")
+        # 提供一个基础的回退方案
+        return create_basic_chat_chain(llm)
     
     if config.USE_CUSTOM_MODEL:
         # 使用异步 OpenAI 客户端
@@ -144,6 +156,8 @@ def create_chat_chain(llm):
                                 if tool_name in failed_tools:
                                     continue
                                     
+                                print(f"Available tools: {list(tool_map.keys())}")
+                                print(f"Attempting to use tool: {tool_name}")
                                 tool = tool_map.get(tool_name)
                                 if tool is None:
                                     print(f"Tool not found: {tool_name}")
@@ -262,4 +276,32 @@ async def simulate_stream(text: str):
     for char in text:
         yield char
         await asyncio.sleep(0.02)  # 每个字符间隔20ms
+    
+def create_basic_chat_chain(llm):
+    """创建基础对话链（不包含工具调用）"""
+    template = """请以专业、友好的语气回答用户的问题。当前时间为：{current_time}。
+    
+    最近的对话历史：
+    {chat_history}
+    
+    当前问题：{question}
+    """
+    
+    prompt = ChatPromptTemplate.from_template(template)
+    parser = StrOutputParser()
+    chain = prompt | llm | parser
+    
+    async def basic_chat_chain(inputs: dict):
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        try:
+            async for chunk in chain.astream({
+                "current_time": current_time,
+                "chat_history": inputs.get("chat_history", ""),
+                "question": inputs["question"]
+            }):
+                yield chunk
+        except Exception as e:
+            yield f"处理您的问题时出错：{str(e)}"
+    
+    return basic_chat_chain
     

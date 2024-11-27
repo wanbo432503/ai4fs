@@ -58,13 +58,14 @@ async def main(message: cl.Message):
             content=full_response
         )
         
-        if title_generated:
+        if title_generated and conv_summary_chain is not None:
             summary = chat_history.generate_conv_summary(conversation_id)
             title = conv_summary_chain.invoke({"chat_history": summary})
             await cl_data._data_layer.update_thread(message.thread_id, name=title)
             fisrt_msg = False
             
     except Exception as e:
+        print(f"on message error: {str(e)}")
         error_msg = f"处理您的问题时出错：{str(e)}"
         await cl.Message(content=error_msg).send()
 
