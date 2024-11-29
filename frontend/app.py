@@ -11,7 +11,7 @@ from config import config
 from typing import Optional
 import chainlit.data as cl_data
 from frontend.data_layer import AI4FSDataLayer
-from frontend.msg_handle import handle_message, init_everything
+from frontend.msg_handle import MessageProcessor, init_everything
 
 
 # 加载环境变量
@@ -46,10 +46,8 @@ async def main(message: cl.Message):
             role="user", 
             content=message.content
         )
-        
         # 据是否有文件上传选择不同的处理流程
-        full_response = await handle_message(message, conversation_id)
-
+        full_response = await MessageProcessor.process_message(message, conversation_id)
         # 保存AI回复
         chat_history.save_message(
             conversation_id=conversation_id,

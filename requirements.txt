@@ -14,3 +14,5 @@ pypdf2
 pypdf
 tavily-python
 duckduckgo-search
+bs4
+requests

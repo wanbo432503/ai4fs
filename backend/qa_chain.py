@@ -29,20 +29,16 @@ def create_qa_chain(llm):
     
     问题：
     {question}
-    
-    请按以下格式输出:
-        1. 先给出完整的回答
-        2. 然后列出"参考来源："
     """
     
     prompt = ChatPromptTemplate.from_template(template)
     parser = StrOutputParser()
     chain = prompt | llm | parser
     
-    async def qa_chain(question: str, context: str):
+    async def qa_chain(inputs: dict):
         async for chunk in chain.astream({
-            "context": context,
-            "question": question
+            "context": inputs.get("context", ""),
+            "question": inputs["question"]
         }):
             yield chunk
             
